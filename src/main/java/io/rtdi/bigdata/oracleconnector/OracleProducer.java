@@ -73,6 +73,23 @@ public class OracleProducer extends Producer<OracleConnectionProperties, OracleP
 					"How could that happen?!?", "conn.setAutoCommit(false);");
 		}
 	}
+	
+	public static String getPKLOGTable() {
+		return "create table PKLOG (\r\n"
+				+ "  CHANGE_TS timestamp, \r\n"
+				+ "  SCHEMA_NAME nvarchar2(256), \r\n"
+				+ "  CHANGE_TYPE varchar2(1), \r\n"
+				+ "  PK1 nvarchar2(256), \r\n"
+				+ "  PK2 nvarchar2(256), \r\n"
+				+ "  PK3 nvarchar2(256), \r\n"
+				+ "  PK4 nvarchar2(256), \r\n"
+				+ "  PK5 nvarchar2(256), \r\n"
+				+ "  PK6 nvarchar2(256), \r\n"
+				+ "  SCN number(19), \r\n"
+				+ "  EXECUTIONORDER number(15) GENERATED ALWAYS as IDENTITY(START with 1 INCREMENT by 1),\r\n"
+				+ "  PROCESSED_SEQ number(15),\r\n"
+				+ "  TABLE_NAME nvarchar2(256) )";
+	}
 
 	@Override
 	public void startProducerChangeLogging() throws IOException {
@@ -86,20 +103,7 @@ public class OracleProducer extends Producer<OracleConnectionProperties, OracleP
 			}
 			if (!OracleTableMapping.checktable("PKLOG", conn)) {
 				
-				sql = "create table PKLOG ("
-						+ "CHANGE_TS timestamp, "
-						+ "SCHEMA_NAME nvarchar2(256), "
-						+ "CHANGE_TYPE varchar2(1), "
-						+ "PK1 nvarchar2(256), "
-						+ "PK2 nvarchar2(256), "
-						+ "PK3 nvarchar2(256), "
-						+ "PK4 nvarchar2(256), "
-						+ "PK5 nvarchar2(256), "
-						+ "PK6 nvarchar2(256), "
-						+ "SCN number(19), "
-						+ "EXECUTIONORDER number(15) GENERATED ALWAYS as IDENTITY(START with 1 INCREMENT by 1),"
-						+ "PROCESSED_SEQ number(15),"
-						+ "TABLE_NAME nvarchar2(256) )";
+				sql = getPKLOGTable();
 				try (PreparedStatement stmt = conn.prepareStatement(sql);) {
 					stmt.execute();
 				}

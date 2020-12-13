@@ -45,7 +45,7 @@ public class SourceTableService {
 			ConnectorController connector = WebAppController.getConnectorOrFail(servletContext);
 			ConnectionController connection = connector.getConnectionOrFail(connectionname);
 			OracleBrowse browser = (OracleBrowse) connection.getBrowser();
-			return Response.ok(browser.getHanaTables()).build();
+			return Response.ok(browser.getOracleTables()).build();
 		} catch (Exception e) {
 			return JAXBErrorResponseBuilder.getJAXBResponse(e);
 		}

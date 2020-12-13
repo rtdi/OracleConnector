@@ -74,7 +74,14 @@ public class OracleBrowse extends BrowsingService<OracleConnectionProperties> {
 	}
 
 	public OracleTableMapping getBusinessObject(String name) throws IOException {
-		OracleTableMapping n1 = OracleTableMapping.readDefinition(null, name, null, bopath);
+		String username = null;
+		if (conn != null) {
+			try {
+				username = conn.getSchema();
+			} catch (SQLException e) {
+			}
+		}
+		OracleTableMapping n1 = OracleTableMapping.readDefinition(username, name, conn, bopath);
 		return n1;
 	}
 
@@ -82,7 +89,7 @@ public class OracleBrowse extends BrowsingService<OracleConnectionProperties> {
 		return bopath;
 	}
 	
-	public List<TableImport> getHanaTables() throws ConnectorRuntimeException {
+	public List<TableImport> getOracleTables() throws ConnectorRuntimeException {
 		/*
 		 * Get all tables that are not Oracle maintained, hence ignoring SYS, SYSTEM,...
 		 * If the user has CREATE-ANY-TRIGGER then all schemas are shown.
