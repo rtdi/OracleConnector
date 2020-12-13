@@ -8,9 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -55,6 +53,7 @@ public class OracleTableMapping {
 	private String mappingname;
 	private String deltaselect;
 	private String initialselect;
+	private Triggers triggerdefinitions;
 
 	public OracleTableMapping() {
 		super();
@@ -125,131 +124,31 @@ public class OracleTableMapping {
 			}
 		}
 	}
+	
+	public Triggers getTriggerDefinitions() throws ConnectorRuntimeException {
+		if (triggerdefinitions == null) {
+			Triggers t = new Triggers();
+			String sql = "select substr(trigger_name, -1) from all_triggers " + 
+					"where table_owner = ? and table_name = ? and trigger_name like table_name || '\\_t\\__' escape '\\' ";
+			try (PreparedStatement stmt = conn.prepareStatement(sql);) {
+				stmt.setString(1, oracleowner);
+				stmt.setString(2, getOracletablename());
+				ResultSet rs = stmt.executeQuery();
+				while (rs.next()) {
+					t.setFoundTrigger(rs.getString(1));
+				}
+			} catch (SQLException e) {
+				throw new ConnectorRuntimeException("Creating the Change Logging triggers failed in the database", e, 
+						"Execute the sql as Oracle user \"" + username + "\"", sql);
+			}
+			triggerdefinitions = t;
+		}
+		return triggerdefinitions;
+	}
 
 	void createTrigger() throws ConnectorRuntimeException {
-		String sql = "select substr(trigger_name, -1) from all_triggers " + 
-				"where table_owner = ? and table_name = ? and trigger_name like table_name || '\\_t\\__' escape '\\' ";
-		try (PreparedStatement stmt = conn.prepareStatement(sql);) {
-			stmt.setString(1, oracleowner);
-			stmt.setString(2, getOracletablename());
-			ResultSet rs = stmt.executeQuery();
-			Set<String> existingtriggers = new HashSet<>();
-			while (rs.next()) {
-				existingtriggers.add(rs.getString(1));
-			}
-			if (existingtriggers.size() < 3) {
-				if (getPKColumns() == null || getPKColumns().size() == 0) {
-					throw new ConnectorRuntimeException("This replication technology does only work on tables with primary keys", null, 
-							"Please remove the table specified from the list of tables to be replicated", getOracletablename());
-				} else if (getPKColumns().size() > 6) {
-					throw new ConnectorRuntimeException("Currently only tables with up the six primary keys are allowed", null, 
-							"Please create and issue", getOracletablename());
-				} else {
-					String sourceidentifier = "\"" + oracleowner + "\".\"" + getOracletablename() + "\"";
-					StringBuffer pklist1 = new StringBuffer();
-					StringBuffer pklist2 = new StringBuffer();
-					StringBuffer pklist3 = new StringBuffer();
-					StringBuffer pklistdifferent = new StringBuffer();
-					for (int i = 0; i < getPKColumns().size(); i++) {
-						String pkcolumn = getPKColumns().get(i);
-						if (pkcolumn == null) {
-							throw new ConnectorRuntimeException("The table is not using all primary key columns", null, 
-									"Make sure all pk columns are mapped at least", getOracletablename() + ": " + getPKColumns().toString());
-						}
-						if (i != 0) {
-							pklist1.append(',');
-							pklist2.append(',');
-							pklist3.append(',');
-							pklistdifferent.append(" OR ");
-						}
-						// :c."MANDT",:c."VBELN"
-						pklist1.append(":c.\"");
-						pklist1.append(pkcolumn);
-						pklist1.append('"');
-						// PK1,PK2
-						pklist2.append("PK");
-						pklist2.append(i+1);
-						// :o."MANDT",:o."VBELN"
-						pklist3.append(":c.\"");
-						pklist3.append(pkcolumn);
-						pklist3.append('"');
-						// :o."MANDT" <> :c."MANDT" OR :o."VBELN" <> :c."VBELN"
-						pklistdifferent.append(":o.\"");
-						pklistdifferent.append(pkcolumn);
-						pklistdifferent.append("\" <> :c.\"");
-						pklistdifferent.append(pkcolumn);
-						pklistdifferent.append('"');
-					}
-					if (!existingtriggers.contains("i")) {
-						sql = "CREATE TRIGGER \"" + getOracletablename() + "_t_i\" \r\n" + 
-								" AFTER INSERT ON " + sourceidentifier + " \r\n" + 
-								" REFERENCING NEW as c \r\n" + 
-								" FOR EACH ROW \r\n" + 
-								" BEGIN \r\n" + 
-								"     INSERT INTO \"" + username + "\".PKLOG \r\n" +
-								"       (change_ts, schema_name, table_name, change_type, \r\n" +
-								"       scn, \r\n" +
-								"      " + pklist2.toString() + ") \r\n" + 
-								"     VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'I', \r\n" +
-								"       dbms_flashback.get_system_change_number, \r\n" +
-								"       " + pklist1.toString() + " ); \r\n" + 
-								" END;";
-						try (Statement stmttr = conn.createStatement();) {
-							stmttr.execute(sql);
-						}
-					}
-					if (!existingtriggers.contains("u")) {
-						sql =   "CREATE TRIGGER \"" + getOracletablename() + "_t_u\" \r\n" + 
-								" AFTER UPDATE ON " + sourceidentifier + " \r\n" + 
-								" REFERENCING NEW as c OLD as o \r\n" + 
-								" FOR EACH ROW \r\n" + 
-								" BEGIN \r\n" + 
-								"     INSERT INTO \"" + username + "\".PKLOG \r\n" +
-								"       (change_ts, schema_name, table_name, change_type, \r\n" +
-								"       scn, \r\n" +
-								"      " + pklist2.toString() + ") \r\n" + 
-								"     VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'U', \r\n" +
-								"       dbms_flashback.get_system_change_number, \r\n" +
-								"       " + pklist1.toString() + " ); \r\n" + 
-								"     IF (" + pklistdifferent.toString() + " ) THEN \r\n" + 
-								"       INSERT INTO \"" + username + "\".PKLOG \r\n" +
-								"         (change_ts, schema_name, table_name, change_type, \r\n" +
-								"       scn, \r\n" +
-								"        " + pklist2.toString() + ") \r\n" + 
-								"       VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'U', \r\n" +
-								"       dbms_flashback.get_system_change_number, \r\n" +
-								"         " + pklist3.toString() + " ); \r\n" + 
-								"     END IF; \r\n" +
-								"END;"; 
-						try (Statement stmttr = conn.createStatement();) {
-							stmttr.execute(sql);
-						}
-					}
-					if (!existingtriggers.contains("d")) {
-						sql =   "CREATE TRIGGER \"" + getOracletablename() + "_t_d\" \r\n" + 
-								" AFTER DELETE ON " + sourceidentifier + " \r\n" + 
-								" REFERENCING OLD as c \r\n" + 
-								" FOR EACH ROW \r\n" + 
-								" BEGIN \r\n" + 
-								"     INSERT INTO \"" + username + "\".PKLOG \r\n" +
-								"      (change_ts, schema_name, table_name, change_type, \r\n" +
-								"       scn, \r\n" +
-								"      " + pklist2.toString() + ") \r\n" + 
-								"     VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'D', \r\n" +
-								"       dbms_flashback.get_system_change_number, \r\n" +
-								"       " + pklist1.toString() + " ); \r\n" + 
-								"END;"; 
-						try (Statement stmttr = conn.createStatement();) {
-							stmttr.execute(sql);
-						}
-					}
-				}
-
-			}
-		} catch (SQLException e) {
-			throw new ConnectorRuntimeException("Creating the Change Logging triggers failed in the database", e, 
-					"Execute the sql as Oracle user \"" + username + "\"", sql);
-		}
+		Triggers t = getTriggerDefinitions();
+		t.createTriggers();
 	}
 
 	protected void parseValues(OracleTableMapping data) throws ConnectorRuntimeException {
@@ -704,5 +603,158 @@ public class OracleTableMapping {
 		return oracletablename;
 	}
 
+	public class Triggers {
+		private String[] trigger = new String[3];
+		private boolean[] exists = new boolean[3];
+		
+		public Triggers() throws ConnectorRuntimeException {
+			exists[0] = false;
+			exists[1] = false;
+			exists[2] = false;
+			String sourceidentifier = "\"" + oracleowner + "\".\"" + getOracletablename() + "\"";
+			StringBuffer pklist1 = new StringBuffer();
+			StringBuffer pklist2 = new StringBuffer();
+			StringBuffer pklist3 = new StringBuffer();
+			StringBuffer pklistdifferent = new StringBuffer();
+			for (int i = 0; i < getPKColumns().size(); i++) {
+				String pkcolumn = getPKColumns().get(i);
+				if (pkcolumn == null) {
+					throw new ConnectorRuntimeException("The table is not using all primary key columns", null, 
+							"Make sure all pk columns are mapped at least", getOracletablename() + ": " + getPKColumns().toString());
+				}
+				if (i != 0) {
+					pklist1.append(',');
+					pklist2.append(',');
+					pklist3.append(',');
+					pklistdifferent.append(" OR ");
+				}
+				// :c."MANDT",:c."VBELN"
+				pklist1.append(":c.\"");
+				pklist1.append(pkcolumn);
+				pklist1.append('"');
+				// PK1,PK2
+				pklist2.append("PK");
+				pklist2.append(i+1);
+				// :o."MANDT",:o."VBELN"
+				pklist3.append(":c.\"");
+				pklist3.append(pkcolumn);
+				pklist3.append('"');
+				// :o."MANDT" <> :c."MANDT" OR :o."VBELN" <> :c."VBELN"
+				pklistdifferent.append(":o.\"");
+				pklistdifferent.append(pkcolumn);
+				pklistdifferent.append("\" <> :c.\"");
+				pklistdifferent.append(pkcolumn);
+				pklistdifferent.append('"');
+			}
+			trigger[0] = "CREATE TRIGGER \"" + getOracletablename() + "_t_i\" \r\n" + 
+					" AFTER INSERT ON " + sourceidentifier + " \r\n" + 
+					" REFERENCING NEW as c \r\n" + 
+					" FOR EACH ROW \r\n" + 
+					" BEGIN \r\n" + 
+					"     INSERT INTO \"" + username + "\".PKLOG \r\n" +
+					"       (change_ts, schema_name, table_name, change_type, \r\n" +
+					"       scn, \r\n" +
+					"      " + pklist2.toString() + ") \r\n" + 
+					"     VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'I', \r\n" +
+					"       dbms_flashback.get_system_change_number, \r\n" +
+					"       " + pklist1.toString() + " ); \r\n" + 
+					" END;";
+			trigger[1] =   "CREATE TRIGGER \"" + getOracletablename() + "_t_u\" \r\n" + 
+					" AFTER UPDATE ON " + sourceidentifier + " \r\n" + 
+					" REFERENCING NEW as c OLD as o \r\n" + 
+					" FOR EACH ROW \r\n" + 
+					" BEGIN \r\n" + 
+					"     INSERT INTO \"" + username + "\".PKLOG \r\n" +
+					"       (change_ts, schema_name, table_name, change_type, \r\n" +
+					"       scn, \r\n" +
+					"      " + pklist2.toString() + ") \r\n" + 
+					"     VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'U', \r\n" +
+					"       dbms_flashback.get_system_change_number, \r\n" +
+					"       " + pklist1.toString() + " ); \r\n" + 
+					"     IF (" + pklistdifferent.toString() + " ) THEN \r\n" + 
+					"       INSERT INTO \"" + username + "\".PKLOG \r\n" +
+					"         (change_ts, schema_name, table_name, change_type, \r\n" +
+					"       scn, \r\n" +
+					"        " + pklist2.toString() + ") \r\n" + 
+					"       VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'U', \r\n" +
+					"       dbms_flashback.get_system_change_number, \r\n" +
+					"         " + pklist3.toString() + " ); \r\n" + 
+					"     END IF; \r\n" +
+					"END;";
+			trigger[2] =   "CREATE TRIGGER \"" + getOracletablename() + "_t_d\" \r\n" + 
+					" AFTER DELETE ON " + sourceidentifier + " \r\n" + 
+					" REFERENCING OLD as c \r\n" + 
+					" FOR EACH ROW \r\n" + 
+					" BEGIN \r\n" + 
+					"     INSERT INTO \"" + username + "\".PKLOG \r\n" +
+					"      (change_ts, schema_name, table_name, change_type, \r\n" +
+					"       scn, \r\n" +
+					"      " + pklist2.toString() + ") \r\n" + 
+					"     VALUES (current_timestamp, '" + oracleowner + "', '" + getOracletablename() + "', 'D', \r\n" +
+					"       dbms_flashback.get_system_change_number, \r\n" +
+					"       " + pklist1.toString() + " ); \r\n" + 
+					"END;";
+		}
+		
+		public void createTriggers() throws ConnectorRuntimeException {
+			for (int i=0; i<3; i++) {
+				if (!exists[i]) {
+					createTrigger(trigger[i]);
+				}
+			}
+		}
+		
+		private void createTrigger(String sql) throws ConnectorRuntimeException {
+			try {
+				try (Statement stmttr = conn.createStatement();) {
+					stmttr.execute(sql);
+				}
+			} catch (SQLException e) {
+				throw new ConnectorRuntimeException("Creating the Change Logging triggers failed in the database", e, 
+						"Execute the sql as Oracle user \"" + username + "\"", sql);
+			}
+		}
+
+		public void setFoundTrigger(String suffix) {
+			switch (suffix) {
+			case "i":
+				exists[0] = true;
+				break;
+			case "u":
+				exists[1] = true;
+				break;
+			case "d":
+				exists[2] = true;
+				break;
+			}
+		}
+		
+		public String getSQLScript() {
+			StringBuffer b = new StringBuffer();
+			for (int i=0; i<3; i++) {
+				if (exists[i]) {
+					b.append("/* Trigger ").append(oracleowner).append(".").append(oracletablename).append("_t_");
+					switch (i) {
+					case 0:
+						b.append("i");
+						break;
+					case 1:
+						b.append("u");
+						break;
+					case 2:
+						b.append("d");
+						break;
+					}
+					b.append(" exists already\r\n");
+				}
+				b.append(trigger[i]);
+				if (exists[i]) {
+					b.append("*/\r\n");
+				}
+				b.append("\r\n");
+			}
+			return b.toString();
+		}
+	}
 
 }

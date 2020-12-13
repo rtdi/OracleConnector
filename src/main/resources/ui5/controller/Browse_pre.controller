@@ -1,0 +1,8 @@
+initExtension : function() {
+	var toolbar = this.getView().byId("toptoolbar");
+	toolbar.addContent(new sap.m.Button({text: "Show SQL script", press: this.onTriggerScript}));
+},
+onTriggerScript : function(oEvent) {
+	var sConnectionname = jQuery.sap.getUriParameters().get("connectionname");
+	window.open('./TriggerScript?connectionname=' + encodeURI(sConnectionname), '_blank');
+},
