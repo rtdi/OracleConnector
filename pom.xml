@@ -4,11 +4,11 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>io.rtdi.bigdata.connector</groupId>
 	<artifactId>oracleconnector</artifactId>
-	<version>0.3.0</version>
+	<version>0.3.2</version>
 	<packaging>war</packaging>
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<io.rtdi.bigdata.connector.version>0.9.41</io.rtdi.bigdata.connector.version>
+		<io.rtdi.bigdata.connector.version>0.10.3</io.rtdi.bigdata.connector.version>
 	</properties>
 	<build>
 		<finalName>${project.artifactId}</finalName>
@@ -45,7 +45,7 @@
 		<dependency>
 			<groupId>com.oracle.database.jdbc</groupId>
 			<artifactId>ojdbc10</artifactId>
-			<version>19.8.0.0</version>
+			<version>19.9.0.0</version>
 		</dependency>
 		<dependency>
 			<groupId>io.rtdi.bigdata.connector</groupId>
@@ -60,10 +60,10 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>javax.servlet</groupId>
-			<artifactId>javax.servlet-api</artifactId>
-			<version>4.0.1</version>
-			<scope>provided</scope>
+		  <groupId>jakarta.servlet</groupId>
+		  <artifactId>jakarta.servlet-api</artifactId>
+		  <version>5.0.0</version>
+		  <scope>provided</scope>
 		</dependency>
 	</dependencies>
 </project>
