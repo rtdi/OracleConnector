@@ -10,12 +10,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.avro.Schema;
+import org.apache.avro.SchemaBuilderException;
 
 import io.rtdi.bigdata.connector.connectorframework.BrowsingService;
 import io.rtdi.bigdata.connector.connectorframework.controller.ConnectionController;
 import io.rtdi.bigdata.connector.connectorframework.entity.TableEntry;
 import io.rtdi.bigdata.connector.connectorframework.exceptions.ConnectorRuntimeException;
-import io.rtdi.bigdata.connector.pipeline.foundation.exceptions.SchemaException;
 import io.rtdi.bigdata.connector.pipeline.foundation.utils.FileNameEncoder;
 
 public class OracleBrowse extends BrowsingService<OracleConnectionProperties> {
@@ -68,7 +68,7 @@ public class OracleBrowse extends BrowsingService<OracleConnectionProperties> {
 		OracleTableMapping n1 = OracleTableMapping.readDefinition(null, name, null, bopath);
 		try {
 			return n1.getAvroSchema();
-		} catch (SchemaException e) {
+		} catch (SchemaBuilderException e) {
 			throw new ConnectorRuntimeException("Schema cannot be parsed", e, null, null);
 		}
 	}
